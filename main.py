@@ -32,7 +32,7 @@ class FzInfoPlugin(Star):
         self.logger.info("明日方舟wiki插件初始化中...")
         self.gamelist = {"fz":{"url":"https://prts.wiki/w","output_dir":os.path.join(self.plugin_dir, "fzassets"),},
                          "ys":{"url":"https://homdgcat.wiki/gi","output_dir":os.path.join(self.plugin_dir, "ysassets"),},
-                         "sr":{"url":"https://honkai-star-rail.fandom.com/zh/wiki","output_dir":os.path.join(self.plugin_dir, "srassets"),}}
+                         "sr":{"url":"https://homdgcat.wiki/sr","output_dir":os.path.join(self.plugin_dir, "srassets")}}
 
     def _handle_config_schema(self) -> None:
         """处理配置文件,确保它在正确的位置"""
@@ -92,10 +92,10 @@ class FzInfoPlugin(Star):
 
     async def get_url(self, game: str, character: str):
         if game in self.gamelist:
-            if game == "sr":
-                url = f"{self.gamelist[game]['url']}/{character}/战斗"
-            else:
-                url = f"{self.gamelist[game]['url']}/{character}"
+            # if game == "sr":
+            #     url = f"{self.gamelist[game]['url']}/{character}/战斗"
+            # else:
+            url = f"{self.gamelist[game]['url']}/{character}"
             return url
         else:
             return None
@@ -158,7 +158,7 @@ class FzInfoPlugin(Star):
                 final_total_height = driver.execute_script("return document.body.scrollHeight")
                 self.logger.info(f"页面最终总高度: {final_total_height}px")
                 last_height = final_total_height
-                last_height = 7000 if "ys" in output_path else last_height # 对于不适配的原神页面进行强制截取长度（待改良）
+                last_height = 7000 if "ys" in output_path or "sr" in output_path else last_height # 对于不适配的原神崩铁页面进行强制截取长度（待改良）
                 # # 设置浏览器窗口大小
                 # last_height = driver.execute_script("return document.body.scrollHeight")#测试
                 driver.set_window_size(1920, last_height)
