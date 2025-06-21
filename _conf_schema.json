@@ -1,0 +1,8 @@
+{
+  "enable_log_output": {
+      "description": "是否在终端输出详细日志信息",
+      "type": "bool",
+      "hint": "true/false",
+      "default": false
+  }
+} 
