@@ -2,12 +2,13 @@ import time
 import os
 import logging
 import json
-import shutil
+import shutil #用于test
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register, StarTools
 from astrbot.core.config.astrbot_config import AstrBotConfig
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from webdriver_manager.chrome import ChromeDriverManager
 
 
 @register("astrbot_plugin_gameinfo", "bushikq", "一个获取部分二游角色wiki信息的插件", "1.0.0")
@@ -17,8 +18,9 @@ class FzInfoPlugin(Star):
         self.data_dir = StarTools.get_data_dir("astrbot_plugin_gameinfo")
         self.plugin_dir = os.path.dirname(__file__)
         self.assets_dir = os.path.join(self.plugin_dir, "assets")
-        if shutil.os.path.exists(self.assets_dir): #为确保及时性，每次重载插件的时候删除旧的截图
-            shutil.rmtree(self.assets_dir)
+        # if shutil.os.path.exists(self.assets_dir): #test
+        #     shutil.rmtree(self.assets_dir)
+        os.makedirs(self.assets_dir, exist_ok=True)
         self.config = config
         self.enable_log_output = self.config.get("enable_log_output", False)
         self.logger = logging.getLogger("astrbot_plugin_gameinfo")
@@ -55,6 +57,15 @@ class FzInfoPlugin(Star):
                 json.dump(schema_content, f, ensure_ascii=False, indent=4)
     
     async def game_info_handler(self, event: AstrMessageEvent, game: str = None, character: str = None):
+        output_dir = self.gamelist[game]["output_dir"]
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, f"{character}.png")
+        if os.path.exists(output_path):
+            if time.time() - os.path.getmtime(output_path) < 3600:  # 1小时缓存
+                yield event.image_result(output_path)
+                return
+            else:
+                os.remove(output_path)# 缓存过期，删除旧的截图
         url = await self.get_url(game=game, character=character)
         if not url:
             yield event.text_result("游戏名输入错误，请重新输入")
@@ -63,16 +74,8 @@ class FzInfoPlugin(Star):
             yield event.text_result("角色名不能为空")
             return
         try:
-            output_dir = self.gamelist[game]["output_dir"]
-            os.makedirs(output_dir, exist_ok=True)
-            output_path = f"{output_dir}/{character}.png"
-            if os.path.exists(output_path):
-                yield event.image_result(output_path)
-                self.logger.info(f" {character} 信息截图已存在，直接发送图片")
-            else:
-                await self.take_full_screenshot(url, output_path, 2)
-                if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-                        yield event.image_result(output_path)
+            await self.take_full_screenshot(url, output_path, 2)
+            yield event.image_result(output_path)
         except Exception as e:
             self.logger.error(f"截图失败: {str(e)}")
     @filter.command("srinfo")
@@ -103,8 +106,7 @@ class FzInfoPlugin(Star):
         else:
             return None
 
-    @filter.command("getscreenshot")
-    async def take_full_screenshot(self, url: str, output_path: str = f"{os.path.dirname(__file__)} /test.png", delay: int = 10) -> bool:
+    async def take_full_screenshot(self, url: str, output_path: str, delay: int = 10) -> bool:
         """
         截取指定网站的完整页面截图并保存到本地
         
@@ -127,9 +129,8 @@ class FzInfoPlugin(Star):
             chrome_options.add_argument('--allow-insecure-localhost') # 允许不安全的本地主机
             chrome_options.add_argument('--log-level=3') # chrome日志等级
             # 初始化浏览器
-            driver = webdriver.Chrome(options=chrome_options)
-            
-            try:
+            service = webdriver.chrome.service.Service(ChromeDriverManager().install())
+            with webdriver.Chrome(service=service, options=chrome_options) as driver:
                 # 访问目标网站
                 driver.get(url)
                 scroll_segments = 5  # 将页面分成 5 段滚动
@@ -170,13 +171,16 @@ class FzInfoPlugin(Star):
                 self.logger.info(f"截图成功保存到: {output_path}")
                 return True
                 
-            except Exception as e:
-                self.logger.error(f"截图过程中发生错误: {str(e)}")
-                return False
-                
-            finally:
-                driver.quit()
-                
         except Exception as e:
-            self.logger.error(f"浏览器初始化失败: {str(e)}")
+            self.logger.error(f"截图失败: {str(e)}", exc_info=True)
             return False
+        
+    @filter.command("getscreenshot")
+    async def getscreenshot_handler(self, event: AstrMessageEvent, url: str):
+        """输入 getscreenshot [URL] 获取网页截图"""
+        output_path = os.path.join(self.assets_dir, "temp_screenshot.png")
+        success = await self.take_full_screenshot(url=url, output_path=output_path)
+        if success:
+            yield event.image_result(output_path)
+        else:
+            yield event.text_result("截图失败，请检查URL是否正确")
