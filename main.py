@@ -8,8 +8,7 @@ from astrbot.api.star import Context, Star, register, StarTools
 from astrbot.core.config.astrbot_config import AstrBotConfig
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
+
 
 @register("astrbot_plugin_gameinfo", "bushikq", "一个获取部分二游角色wiki信息的插件", "1.0.0")
 class FzInfoPlugin(Star):
