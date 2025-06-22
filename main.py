@@ -2,6 +2,7 @@ import time
 import os
 import logging
 import json
+import shutil
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register, StarTools
 from astrbot.core.config.astrbot_config import AstrBotConfig
@@ -16,6 +17,9 @@ class FzInfoPlugin(Star):
         super().__init__(context)
         self.data_dir = StarTools.get_data_dir("astrbot_plugin_gameinfo")
         self.plugin_dir = os.path.dirname(__file__)
+        self.assets_dir = os.path.join(self.plugin_dir, "assets")
+        if shutil.os.path.exists(self.assets_dir): #为确保及时性，每次重载插件的时候删除旧的截图
+            shutil.rmtree(self.assets_dir)
         self.config = config
         self.enable_log_output = self.config.get("enable_log_output", False)
         self.logger = logging.getLogger("astrbot_plugin_gameinfo")
@@ -28,11 +32,11 @@ class FzInfoPlugin(Star):
         if self.enable_log_output:
             self.logger.setLevel(logging.INFO) # 日志等级 可以根据需要调整
         else:
-            self.logger.setLevel(logging.ERROR) # 日志等级 
+            self.logger.setLevel(logging.ERROR)
         self.logger.info("明日方舟wiki插件初始化中...")
-        self.gamelist = {"fz":{"url":"https://prts.wiki/w","output_dir":os.path.join(self.plugin_dir, "fzassets"),},
-                         "ys":{"url":"https://homdgcat.wiki/gi","output_dir":os.path.join(self.plugin_dir, "ysassets"),},
-                         "sr":{"url":"https://homdgcat.wiki/sr","output_dir":os.path.join(self.plugin_dir, "srassets")}}
+        self.gamelist = {"fz":{"url":"https://prts.wiki/w","output_dir":os.path.join(self.assets_dir, "fzassets"),},
+                         "ys":{"url":"https://homdgcat.wiki/gi","output_dir":os.path.join(self.assets_dir, "ysassets"),},
+                         "sr":{"url":"https://homdgcat.wiki/sr","output_dir":os.path.join(self.assets_dir, "srassets")}}
 
     def _handle_config_schema(self) -> None:
         """处理配置文件,确保它在正确的位置"""
