@@ -1,6 +1,6 @@
 # 部分二游角色 wiki 插件 astrbot_plugin_gameinfo
 
-## v1.0.0
+## v1.0.5
 
 这是一个获取部分二游角色 wiki 的 AstrBot 插件。
 
@@ -20,10 +20,17 @@
 ## 配置项
 
 - `enable_log_output`: 是否启用详细日志输出（默认：false）
+- `browser_type`: 截图使用的浏览器类型（默认：chrome）
 
 ## 已知问题
 
 - 崩铁和原神 Wiki 页面尾部可能有过多空余。
+
+## 更新日志:
+
+### v1.0.5
+
+- 增添了对 edge,firefox 浏览器的支持。
 
 ## 注意事项
 

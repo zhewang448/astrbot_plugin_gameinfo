@@ -7,11 +7,15 @@ from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register, StarTools
 from astrbot.core.config.astrbot_config import AstrBotConfig
 from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.options import Options as ChromeOptions
+from selenium.webdriver.edge.options import Options as EdgeOptions # 导入 Edge Options
+from selenium.webdriver.firefox.options import Options as FirefoxOptions
 from webdriver_manager.chrome import ChromeDriverManager
+from webdriver_manager.microsoft import EdgeChromiumDriverManager # 导入 Edge DriverManager
+from webdriver_manager.firefox import GeckoDriverManager
 
 
-@register("astrbot_plugin_gameinfo", "bushikq", "一个获取部分二游角色wiki信息的插件", "1.0.0")
+@register("astrbot_plugin_gameinfo", "bushikq", "一个获取部分二游角色wiki信息的插件", "1.0.5")
 class FzInfoPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -23,6 +27,9 @@ class FzInfoPlugin(Star):
         os.makedirs(self.assets_dir, exist_ok=True)
         self.config = config
         self.enable_log_output = self.config.get("enable_log_output", False)
+        # 新增浏览器类型配置，默认仍为chrome
+        self.browser_type = self.config.get("browser_type", "chrome").lower()
+
         self.logger = logging.getLogger("astrbot_plugin_gameinfo")
         if not self.logger.handlers:
                 handler = logging.StreamHandler()
@@ -38,6 +45,7 @@ class FzInfoPlugin(Star):
         self.gamelist = {"fz":{"url":"https://prts.wiki/w","output_dir":os.path.join(self.assets_dir, "fzassets"),},
                          "ys":{"url":"https://homdgcat.wiki/gi","output_dir":os.path.join(self.assets_dir, "ysassets"),},
                          "sr":{"url":"https://homdgcat.wiki/sr","output_dir":os.path.join(self.assets_dir, "srassets")}}
+        self._handle_config_schema() # 调用处理配置文件方法
 
     def _handle_config_schema(self) -> None:
         """处理配置文件,确保它在正确的位置"""
@@ -47,6 +55,12 @@ class FzInfoPlugin(Star):
                 "type": "bool",
                 "hint": "true/false",
                 "default": False
+            },
+            "browser_type": { 
+                "description": "用于网页截图的浏览器类型 (chrome 或 edge)",
+                "type": "string",
+                "hint": "chrome/edge/firefox", 
+                "default": "chrome"
             }
         }
         config_path = self.data_dir / "_conf_schema.json"
@@ -120,30 +134,39 @@ class FzInfoPlugin(Star):
         """
         try:
             self.logger.info(f"开始截图: {url}")
-            # 设置Chrome选项
-            chrome_options = Options()
-            chrome_options.add_argument('--headless')
-            chrome_options.add_argument('--disable-gpu')
-            chrome_options.add_argument('--window-size=1920,1080')
-            chrome_options.add_argument('--ignore-certificate-errors') # 忽略证书错误
-            chrome_options.add_argument('--allow-insecure-localhost') # 允许不安全的本地主机
-            chrome_options.add_argument('--log-level=3') # chrome日志等级
-            # 初始化浏览器
-            service = webdriver.chrome.service.Service(ChromeDriverManager().install())
-            with webdriver.Chrome(service=service, options=chrome_options) as driver:
-                # 访问目标网站
+            driver = None
+            service = None
+            if self.browser_type == "edge": # 添加 Edge 支持
+                options = EdgeOptions()
+            elif self.browser_type == "firefox": # 添加 Firefox 支持
+                options = FirefoxOptions()
+            else: # 默认为 Chrome
+                options = ChromeOptions()
+            options.add_argument('--headless')
+            options.add_argument('--disable-gpu')
+            options.add_argument('--window-size=1920,1080')
+            options.add_argument('--ignore-certificate-errors')
+            options.add_argument('--allow-insecure-localhost')
+            options.add_argument('--log-level=3')
+            if self.browser_type == "edge":
+                service = webdriver.edge.service.Service(EdgeChromiumDriverManager().install())
+                driver = webdriver.Edge(service=service, options=options)
+            elif self.browser_type == "firefox":
+                service = webdriver.firefox.service.Service(GeckoDriverManager().install())
+                driver = webdriver.Firefox(service=service, options=options)
+            else:
+                service = webdriver.chrome.service.Service(ChromeDriverManager().install())
+                driver = webdriver.Chrome(service=service, options=options)
+            with driver:
                 driver.get(url)
-                scroll_segments = 5  # 将页面分成 5 段滚动
+                scroll_segments = 5 # 将页面分成 5 段滚动
                 initial_height = 0
-                scroll_pause_time = .75 # 每段滑动后等待0.75秒，可根据需要调整
+                scroll_pause_time = .75  # 每段滑动后等待0.75秒，可根据需要调整
 
                 for i in range(scroll_segments):
-                    # 每次向下滚动一个屏幕的高度或计算出的段高
-                    # 这里选择滚动到当前可视窗口底部，然后循环直到总高度不再变化
                     driver.execute_script(f"window.scrollTo(0, document.body.scrollHeight / {scroll_segments} * ({i + 1}));")
-                    time.sleep(scroll_pause_time) # 每次滚动后短暂等待，让内容有机会加载和渲染
+                    time.sleep(scroll_pause_time)
 
-                    # 获取滚动后的
                     new_height = driver.execute_script("return document.body.scrollHeight")
                     if new_height > initial_height:
                         self.logger.info(f"滚动到第 {i+1} 段，新高度: {new_height}px")
@@ -153,20 +176,16 @@ class FzInfoPlugin(Star):
                     if i == scroll_segments - 1:
                          driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                          time.sleep(scroll_pause_time) # 确保最终完全滚动到底部并等待
-
                 # 最终确认页面内容稳定
                 # WebDriverWait(driver, delay).until(EC.visibility_of_element_located((By.ID, "mw-content-text")))
                 # self.logger.info("页面内容加载完成")
 
-                # 获取最终页面总高度
                 final_total_height = driver.execute_script("return document.body.scrollHeight")
                 self.logger.info(f"页面最终总高度: {final_total_height}px")
                 last_height = final_total_height
                 last_height = 7000 if "ys" in output_path or "sr" in output_path else last_height # 对于不适配的原神崩铁页面进行强制截取长度（待改良）
-                # # 设置浏览器窗口大小
                 # last_height = driver.execute_script("return document.body.scrollHeight")#测试
                 driver.set_window_size(1920, last_height)
-                # 截取完整页面
                 driver.save_screenshot(output_path)
                 self.logger.info(f"截图成功保存到: {output_path}")
                 return True

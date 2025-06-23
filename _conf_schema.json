@@ -4,5 +4,11 @@
       "type": "bool",
       "hint": "true/false",
       "default": false
+  },
+  "browser_type": { 
+      "description": "用于网页截图的浏览器类型 (chrome 或 edge 或 firefox)", 
+      "type": "string",
+      "hint": "chrome/edge/firefox", 
+      "default": "chrome"
   }
 } 
