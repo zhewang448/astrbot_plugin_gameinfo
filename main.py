@@ -215,6 +215,7 @@ class FzInfoPlugin(Star):
                         time.sleep(scroll_pause_time) # 确保最终完全滚动到底部并等待
             if game == "issac":
                 element = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "mw-normal-catlinks")))
+                driver.execute_script("window.scrollTo(0, 0);")
                 last_height = element.location['y']
             elif game == "sr" or game == "ys":
                 driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
