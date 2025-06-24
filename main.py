@@ -2,7 +2,7 @@ import time
 import os
 import logging
 import json
-import shutil #用于test
+# import shutil #用于test
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register, StarTools
 from astrbot.core.config.astrbot_config import AstrBotConfig
@@ -31,8 +31,7 @@ class FzInfoPlugin(Star):
         #     shutil.rmtree(self.assets_dir)
         os.makedirs(self.assets_dir, exist_ok=True)
         self.config = config
-        self.enable_log_output = self.config.get("enable_log_output", False)
-        # 新增浏览器类型配置，默认仍为chrome
+        self.enable_log_output = self.config.get("enable_log_output", False)# 新增浏览器类型配置，默认仍为chrome
         self.browser_type = self.config.get("browser_type", "chrome").lower()
 
         self.logger = logging.getLogger("astrbot_plugin_gameinfo")
@@ -126,7 +125,7 @@ class FzInfoPlugin(Star):
             yield event.plain_result("url获取失败")
             return
         try:
-            await self.take_full_screenshot(url, output_path, 2)
+            await self.take_full_screenshot(url, output_path, game, 3)
             yield event.image_result(output_path)
         except Exception as e:
             self.logger.error(f"截图失败: {str(e)}")
@@ -161,7 +160,6 @@ class FzInfoPlugin(Star):
         """输入 issacinfo [角色名]    返回角色信息截图""" 
         async for ret in self.game_info_handler(event=event, game="issac", character=character):
             yield ret
-    
 
     async def get_url(self, game: str, character: str):
         if game in self.gamelist:
@@ -172,9 +170,7 @@ class FzInfoPlugin(Star):
                     driver.get(self.gamelist[game]["url"])
                     character_link_xpath = f"//a[contains(@href, '/character/') and .//div[contains(text(), '{character.split('/')[0]}')]]"
                     # 等待角色链接加载并可点击
-                    character_link = WebDriverWait(driver, 10).until(
-                        EC.element_to_be_clickable((By.XPATH, character_link_xpath))
-                    )
+                    character_link = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, character_link_xpath)))
                     # 点击角色链接
                     url = character_link.get_attribute('href')
                     self.logger.info(f"获取到url: {url}")
@@ -182,15 +178,13 @@ class FzInfoPlugin(Star):
                 except Exception as e:
                     self.logger.error(f"获取url失败: {str(e)}")
                     return False
-            # if game == "sr":
-            #     url = f"{self.gamelist[game]['url']}/{character}/战斗"
             else:
                 url = f"{self.gamelist[game]['url']}/{character}"
             return url
         else:
             return None
 
-    async def take_full_screenshot(self, url: str, output_path: str, delay: int = 10) -> bool:
+    async def take_full_screenshot(self, url: str, output_path: str, game: str = None, delay: int = 10) -> bool:
         """
         截取指定网站的完整页面截图并保存到本地
         
@@ -206,32 +200,30 @@ class FzInfoPlugin(Star):
             self.logger.info(f"开始截图: {url}")
             driver = self.driver
             driver.get(url)
-            scroll_segments = 5 # 将页面分成 5 段滚动
             initial_height = 0
+            scroll_segments = 5 # 将页面分成 5 段滚动
             scroll_pause_time = .75  # 每段滑动后等待0.75秒，可根据需要调整
 
-            for i in range(scroll_segments):
+            for i in range(scroll_segments): #分段滚动
                 driver.execute_script(f"window.scrollTo(0, document.body.scrollHeight / {scroll_segments} * ({i + 1}));")
                 time.sleep(scroll_pause_time)
-
                 new_height = driver.execute_script("return document.body.scrollHeight")
                 if new_height > initial_height:
-                    self.logger.info(f"滚动到第 {i+1} 段，新高度: {new_height}px")
                     initial_height = new_height 
-                else:
-                    self.logger.info(f"滚动到第 {i+1} 段，高度未变化。")
                 if i == scroll_segments - 1:
                         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                         time.sleep(scroll_pause_time) # 确保最终完全滚动到底部并等待
-            # 最终确认页面内容稳定
-            # WebDriverWait(driver, delay).until(EC.visibility_of_element_located((By.ID, "mw-content-text")))
-            # self.logger.info("页面内容加载完成")
-
-            final_total_height = driver.execute_script("return document.body.scrollHeight")
-            self.logger.info(f"页面最终总高度: {final_total_height}px")
-            last_height = final_total_height
-            last_height = 7000 if "ys" in output_path or "sr" in output_path else last_height # 对于不适配的原神崩铁页面进行强制截取长度（待改良）
-            # last_height = driver.execute_script("return document.body.scrollHeight")#测试
+            if game == "issac":
+                element = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "mw-normal-catlinks")))
+                last_height = element.location['y']
+            elif game == "sr" or game == "ys":
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(scroll_pause_time) # 等待页面加载完成
+                element = driver.find_elements(By.CSS_SELECTOR, "div.a_section.c_0.c_3")[-1] if game == "sr" else driver.find_elements(By.CSS_SELECTOR, "div.a_section.shows.shows_3")[-1]
+                last_height = element.location['y'] + element.size['height'] + 500 # 适配sr/ys页面
+            else:
+                last_height = driver.execute_script("return document.body.scrollHeight")
+            self.logger.info(f"页面最终总高度: {last_height}px")
             driver.set_window_size(1920, last_height)
             driver.save_screenshot(output_path)
             self.logger.info(f"截图成功保存到: {output_path}")
