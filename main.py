@@ -222,6 +222,16 @@ class FzInfoPlugin(Star):
                 time.sleep(scroll_pause_time) # 等待页面加载完成
                 element = driver.find_elements(By.CSS_SELECTOR, "div.a_section.c_0.c_3")[-1] if game == "sr" else driver.find_elements(By.CSS_SELECTOR, "div.a_section.shows.shows_3")[-1]
                 last_height = element.location['y'] + element.size['height'] + 500 # 适配sr/ys页面
+            elif game == "zzz" or game == "ww":
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(scroll_pause_time) # 等待页面加载完成
+                element = driver.find_elements(By.CSS_SELECTOR, "div.flex.flex-col.justify-center.text-sm.font-light.text-gray-400.border-opacity-20")[-1]
+                last_height = element.location['y'] + element.size['height'] # 适配zzz/ww页面
+            elif game == "fz":
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(scroll_pause_time) # 等待页面加载完成
+                element = driver.find_elements(By.ID, "footer-poweredbyico")[-1]
+                last_height = element.location['y'] + element.size['height'] # 适配fz页面
             else:
                 last_height = driver.execute_script("return document.body.scrollHeight")
             self.logger.info(f"页面最终总高度: {last_height}px")
@@ -229,7 +239,6 @@ class FzInfoPlugin(Star):
             driver.save_screenshot(output_path)
             self.logger.info(f"截图成功保存到: {output_path}")
             return True
-                
         except Exception as e:
             self.logger.error(f"截图失败: {str(e)}", exc_info=True)
             return False
