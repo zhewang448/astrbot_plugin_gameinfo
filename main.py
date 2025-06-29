@@ -20,7 +20,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 
 
-@register("astrbot_plugin_gameinfo", "bushikq", "一个获取部分二游角色wiki信息的插件", "1.1.0")
+@register("astrbot_plugin_gameinfo", "bushikq", "一个获取部分二游角色wiki信息的插件", "1.1.5")
 class FzInfoPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -256,3 +256,8 @@ class FzInfoPlugin(Star):
         """可选择实现异步的插件销毁方法，当插件被卸载/停用时会调用。"""
         self.logger.info("退出driver...")
         self.driver.quit()
+    @filter.command("infohelp")
+    async def help_handler(self, event: AstrMessageEvent):
+        """获取帮助"""
+        help_path = os.path.join(self.assets_dir, "help.png")
+        yield event.image_result(help_path)

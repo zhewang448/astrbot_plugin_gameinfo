@@ -1,6 +1,6 @@
 # 部分二游角色 wiki 插件 astrbot_plugin_gameinfo
 
-## v1.1.0
+## v1.1.5
 
 这是一个获取部分二游角色 wiki 的 AstrBot 插件。
 
@@ -19,6 +19,7 @@
 - `/zzzinfo [角色名]` 发送指绝区零角色 wiki 截图
 - `/issacinfo [物品]` 发送指定以撒词条 wiki 截图
 - `/getscreenshot [网页链接]` 发送指定网页截图（兼容性不保证）
+- `/infohelp` 发送指令帮助信息
 
 ## 配置项
 
