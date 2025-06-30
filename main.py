@@ -20,7 +20,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 
 
-@register("astrbot_plugin_gameinfo", "bushikq", "一个获取部分二游角色wiki信息的插件", "1.1.5")
+@register("astrbot_plugin_gameinfo", "bushikq", "一个获取部分二游角色wiki信息的插件", "1.1.6")
 class FzInfoPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -55,7 +55,7 @@ class FzInfoPlugin(Star):
         self._handle_config_schema() # 调用处理配置文件方法
         self._handle_driver_manager() # 调用浏览器驱动管理方法
 
-    async def _handle_config_schema(self) -> None:
+    def _handle_config_schema(self) -> None:
         """处理配置文件,确保它在正确的位置"""
         schema_content ={
             "enable_log_output": {
