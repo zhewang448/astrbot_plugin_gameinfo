@@ -95,15 +95,18 @@ class FzInfoPlugin(Star):
         options.add_argument('--ignore-certificate-errors')
         options.add_argument('--allow-insecure-localhost')
         options.add_argument('--log-level=3')
-        if self.browser_type == "edge":
-            service = webdriver.edge.service.Service(EdgeChromiumDriverManager().install())
-            self.driver = webdriver.Edge(service=service, options=options)
-        elif self.browser_type == "firefox":
-            service = webdriver.firefox.service.Service(GeckoDriverManager().install())
-            self.driver = webdriver.Firefox(service=service, options=options)
-        else:
-            service = webdriver.chrome.service.Service(ChromeDriverManager().install())
-            self.driver = webdriver.Chrome(service=service, options=options)
+        try:
+            if self.browser_type == "edge":
+                service = webdriver.edge.service.Service(EdgeChromiumDriverManager().install())
+                self.driver = webdriver.Edge(service=service, options=options)
+            elif self.browser_type == "firefox":
+                service = webdriver.firefox.service.Service(GeckoDriverManager().install())
+                self.driver = webdriver.Firefox(service=service, options=options)
+            else:
+                service = webdriver.chrome.service.Service(ChromeDriverManager().install())
+                self.driver = webdriver.Chrome(service=service, options=options)
+        except Exception as e:
+            self.logger.error(f"浏览器驱动下载失败: {str(e)}")
     
     async def game_info_handler(self, event: AstrMessageEvent, game: str = None, character: str = None):
         if not character:
