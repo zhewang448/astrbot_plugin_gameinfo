@@ -114,6 +114,7 @@ class FzInfoPlugin(Star):
             return
         if game not in self.gamelist:
             yield event.plain_result("未知游戏")
+        yield event.plain_result(f"正在查询{game}中的{character}信息，请稍后...")
         output_dir = self.gamelist[game]["output_dir"]
         os.makedirs(output_dir, exist_ok=True)
         output_path = os.path.join(output_dir, f"{character}.png")
