@@ -1,14 +1,13 @@
 import time
 import os
-import logging
 import json
-# import shutil #用于test
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register, StarTools
 from astrbot.core.config.astrbot_config import AstrBotConfig
+from astrbot.api import logger
 from selenium import webdriver
-from selenium.webdriver.chrome.options import Options as ChromeOptions
-from selenium.webdriver.edge.options import Options as EdgeOptions # 导入 Edge Options
+from selenium.webdriver.chrome.options import Options as ChromeOptions# 导入 ChromeOptions
+from selenium.webdriver.edge.options import Options as EdgeOptions 
 from selenium.webdriver.firefox.options import Options as FirefoxOptions
 from webdriver_manager.chrome import ChromeDriverManager
 from webdriver_manager.microsoft import EdgeChromiumDriverManager # 导入 Edge DriverManager
@@ -20,7 +19,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 
 
-@register("astrbot_plugin_gameinfo", "bushikq", "一个获取部分二游角色wiki信息的插件", "1.1.6")
+
+@register("astrbot_plugin_gameinfo", "bushikq", "一个获取部分二游角色wiki信息的插件", "1.1.7")
 class FzInfoPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -31,20 +31,10 @@ class FzInfoPlugin(Star):
         #     shutil.rmtree(self.assets_dir)
         os.makedirs(self.assets_dir, exist_ok=True)
         self.config = config
-        self.enable_log_output = self.config.get("enable_log_output", False)# 新增浏览器类型配置，默认仍为chrome
         self.browser_type = self.config.get("browser_type", "chrome").lower()
+        self.driver_path = self.config.get("driver_path", "").replace("\\", "/").replace('"', "")
 
-        self.logger = logging.getLogger("astrbot_plugin_gameinfo")
-        if not self.logger.handlers:
-                handler = logging.StreamHandler()
-                formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-                handler.setFormatter(formatter)
-                self.logger.addHandler(handler)
-                self.logger.setLevel(logging.INFO)
-        if self.enable_log_output:
-            self.logger.setLevel(logging.INFO) # 日志等级 可以根据需要调整
-        else:
-            self.logger.setLevel(logging.ERROR)
+        self.logger = logger
         self.logger.info("二游wiki插件初始化中...")
         self.gamelist = {"fz":{"url":"https://prts.wiki/w","output_dir":os.path.join(self.assets_dir, "fzassets"),},
                          "ys":{"url":"https://homdgcat.wiki/gi","output_dir":os.path.join(self.assets_dir, "ysassets"),},
@@ -58,19 +48,18 @@ class FzInfoPlugin(Star):
     def _handle_config_schema(self) -> None:
         """处理配置文件,确保它在正确的位置"""
         schema_content ={
-            "enable_log_output": {
-                "description": "是否在终端输出详细日志信息",
-                "type": "bool",
-                "hint": "true/false",
-                "default": False
-            },
             "browser_type": { 
                 "description": "用于网页截图的浏览器类型 (chrome 或 edge)",
                 "type": "string",
                 "hint": "chrome/edge/firefox", 
                 "default": "chrome"
-            }
-        }
+            },
+            "driver_path": {
+                "description": "浏览器驱动路径，留空则使用默认驱动",
+                "type": "string",
+                "hint": "驱动路径",
+                "default": ""
+        }}
         config_path = self.data_dir / "_conf_schema.json"
         
         # 如果配置文件不存在,创建它
@@ -80,34 +69,44 @@ class FzInfoPlugin(Star):
     def _handle_driver_manager(self) -> None:
         self.driver = None
         service = None
-        if self.browser_type == "edge": # 添加 Edge 支持
-            options = EdgeOptions()
-            options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36 Edg/91.0.864.59")
-        elif self.browser_type == "firefox": # 添加 Firefox 支持
-            options = FirefoxOptions()
-            options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0")
-        else: # 默认为 Chrome
-            options = ChromeOptions()
-            options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-        options.add_argument('--headless')
-        options.add_argument('--disable-gpu')
-        options.add_argument('--window-size=1920,1080')
-        options.add_argument('--ignore-certificate-errors')
-        options.add_argument('--allow-insecure-localhost')
-        options.add_argument('--log-level=3')
+        if self.browser_type not in ["chrome", "edge", "firefox"]:
+            self.logger.error(f"不支持的浏览器类型: {self.browser_type}")
+            self.browser_type = "chrome"
+        if self.driver_path and not os.path.exists(self.driver_path):
+            self.logger.error(f"驱动路径不存在: {self.driver_path}")
+            self.driver_path = ""
+        def add_argument(options):
+            options.add_argument('--headless')
+            options.add_argument('--disable-gpu')
+            options.add_argument('--window-size=1920,1080')
+            options.add_argument('--ignore-certificate-errors')
+            options.add_argument('--allow-insecure-localhost')
+            options.add_argument('log-level=3')
+            options.add_argument('disable-infobars')
+            options.add_argument('--disable-logging')
+            options.add_experimental_option('excludeSwitches', ['enable-logging'])
         try:
-            if self.browser_type == "edge":
-                service = webdriver.edge.service.Service(EdgeChromiumDriverManager().install())
+            if self.browser_type == "edge": # 添加 Edge 支持
+                options = EdgeOptions()
+                options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36 Edg/91.0.864.59")
+                add_argument(options)
+                service = webdriver.edge.service.Service(EdgeChromiumDriverManager().install()) if not self.driver_path else webdriver.edge.service.Service(self.driver_path)
                 self.driver = webdriver.Edge(service=service, options=options)
-            elif self.browser_type == "firefox":
-                service = webdriver.firefox.service.Service(GeckoDriverManager().install())
+            elif self.browser_type == "firefox": # 添加 Firefox 支持
+                options = FirefoxOptions()
+                options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0")
+                add_argument(options)
+                service = webdriver.firefox.service.Service(GeckoDriverManager().install()) if not self.driver_path else webdriver.firefox.service.Service(self.driver_path)
                 self.driver = webdriver.Firefox(service=service, options=options)
-            else:
-                service = webdriver.chrome.service.Service(ChromeDriverManager().install())
+            else: # 默认为 Chrome
+                options = ChromeOptions()
+                options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+                add_argument(options)
+                service = webdriver.chrome.service.Service(ChromeDriverManager().install()) if not self.driver_path else  webdriver.chrome.service.Service(self.driver_path)
                 self.driver = webdriver.Chrome(service=service, options=options)
         except Exception as e:
-            self.logger.error(f"浏览器驱动下载失败: {str(e)}")
-    
+            self.logger.error(f"浏览器驱动初始化失败: {str(e)}")
+
     async def game_info_handler(self, event: AstrMessageEvent, game: str = None, character: str = None):
         if not character:
             yield event.plain_result("角色名不能为空")
@@ -133,32 +132,32 @@ class FzInfoPlugin(Star):
         except Exception as e:
             self.logger.error(f"截图失败: {str(e)}")
 
-    @filter.command("srinfo")
+    @filter.command("srinfo", alias={'崩铁wiki查询', '星穹铁道wiki查询'})
     async def sr_handler(self, event: AstrMessageEvent, character: str = None):
         """输入 srinfo [角色名]    返回角色信息截图""" 
         async for ret in self.game_info_handler(event=event, game="sr", character=character):
             yield ret 
-    @filter.command("fzinfo")
+    @filter.command("fzinfo", alias={'方舟wiki查询','明日方舟wiki查询'})
     async def fz_handler(self, event: AstrMessageEvent, character: str = None):
         """输入 fzinfo [角色名]    返回角色信息截图""" 
         async for ret in self.game_info_handler(event=event, game="fz", character=character):
             yield ret
-    @filter.command("ysinfo")
+    @filter.command("ysinfo", alias={'原神wiki查询'})
     async def ys_handler(self, event: AstrMessageEvent, character: str = None):
         """输入 ysinfo [角色名]    返回角色信息截图""" 
         async for ret in self.game_info_handler(event=event, game="ys", character=character):
             yield ret
-    @filter.command("zzzinfo")
+    @filter.command("zzzinfo", alias={'绝区零wiki查询'})
     async def zzz_handler(self, event: AstrMessageEvent, character: str = None):
         """输入 zzzinfo [角色名]    返回角色信息截图""" 
         async for ret in self.game_info_handler(event=event, game="zzz", character=character):
             yield ret
-    @filter.command("wwinfo")
+    @filter.command("wwinfo" , alias={'鸣潮wiki查询'})
     async def ww_handler(self, event: AstrMessageEvent, character: str = None):
         """输入 wwinfo [角色名]    返回角色信息截图""" 
         async for ret in self.game_info_handler(event=event, game="ww", character=character):
             yield ret
-    @filter.command("issacinfo")
+    @filter.command("issacinfo", alias={'以撒wiki查询'})
     async def issac_handler(self, event: AstrMessageEvent, character: str = None):
         """输入 issacinfo [角色名]    返回角色信息截图""" 
         async for ret in self.game_info_handler(event=event, game="issac", character=character):
@@ -259,7 +258,7 @@ class FzInfoPlugin(Star):
         """可选择实现异步的插件销毁方法，当插件被卸载/停用时会调用。"""
         self.logger.info("退出driver...")
         self.driver.quit()
-    @filter.command("infohelp")
+    @filter.command("infohelp", alias={'gameinfo帮助'})
     async def help_handler(self, event: AstrMessageEvent):
         """获取帮助"""
         help_path = os.path.join(self.assets_dir, "help.png")

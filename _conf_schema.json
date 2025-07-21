@@ -1,14 +1,14 @@
 {
-  "enable_log_output": {
-      "description": "是否在终端输出详细日志信息",
-      "type": "bool",
-      "hint": "true/false",
-      "default": false
-  },
   "browser_type": { 
       "description": "用于网页截图的浏览器类型 (chrome 或 edge 或 firefox)", 
       "type": "string",
       "hint": "chrome/edge/firefox", 
       "default": "chrome"
-  }
-} 
+  },
+    "driver_path": {
+        "description": "浏览器驱动路径",
+        "type": "string",
+        "hint": "驱动路径",
+        "default": ""
+  } 
+}
