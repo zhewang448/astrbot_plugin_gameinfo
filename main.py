@@ -104,8 +104,9 @@ class FzInfoPlugin(Star):
                 add_argument(options)
                 service = webdriver.chrome.service.Service(ChromeDriverManager().install()) if not self.driver_path else  webdriver.chrome.service.Service(self.driver_path)
                 self.driver = webdriver.Chrome(service=service, options=options)
+            self.logger.info(f"浏览器驱动初始化成功: {self.browser_type}")
         except Exception as e:
-            self.logger.error(f"浏览器驱动初始化失败: {str(e)}")
+            self.logger.error(f"浏览器驱动初始化失败: {str(e)},请手动在配置中添加driver地址")
 
     async def game_info_handler(self, event: AstrMessageEvent, game: str = None, character: str = None):
         if not character:
