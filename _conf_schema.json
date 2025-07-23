@@ -10,5 +10,11 @@
         "type": "string",
         "hint": "驱动路径",
         "default": ""
-  } 
+  },
+  "keep_temp_time": {
+        "description": "保留已保存的截图的时长，单位为分钟",
+        "type": "int",
+        "hint": "分钟",
+        "default": 60
+}
 }

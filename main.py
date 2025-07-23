@@ -1,7 +1,9 @@
 import time
 import os
-import json
+import asyncio
 from astrbot.api.event import filter, AstrMessageEvent
+from astrbot.core.utils.session_waiter import session_waiter, SessionController
+import astrbot.api.message_components as Comp
 from astrbot.api.star import Context, Star, register, StarTools
 from astrbot.core.config.astrbot_config import AstrBotConfig
 from astrbot.api import logger
@@ -22,7 +24,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 
 @register(
-    "astrbot_plugin_gameinfo", "bushikq", "一个获取部分二游角色wiki信息的插件", "1.1.7"
+    "astrbot_plugin_gameinfo", "bushikq", "一个获取部分二游角色wiki信息的插件", "1.1.8"
 )
 class FzInfoPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -36,6 +38,9 @@ class FzInfoPlugin(Star):
         self.driver_path = (
             self.config.get("driver_path", "").replace("\\", "/").replace('"', "")
         )
+        self.keep_temp_time = (
+            self.config.get("keep_temp_time", 3600)
+        ) * 60  # 截图缓存时间 单位转化为秒
         logger.info("二游wiki插件初始化中...")  # 使用框架自带logger
         self.gamelist = {
             "fz": {
@@ -68,26 +73,9 @@ class FzInfoPlugin(Star):
 
     def _handle_config_schema(self) -> None:
         """处理配置文件,确保它在正确的位置"""
-        schema_content = {
-            "browser_type": {
-                "description": "用于网页截图的浏览器类型 (chrome 或 edge)",
-                "type": "string",
-                "hint": "chrome/edge/firefox",
-                "default": "chrome",
-            },
-            "driver_path": {
-                "description": "浏览器驱动路径，留空则使用默认驱动",
-                "type": "string",
-                "hint": "驱动路径",
-                "default": "",
-            },
-        }
         config_path = self.data_dir / "_conf_schema.json"
-
-        # 如果配置文件不存在,创建它
         if not config_path.exists():
-            with open(config_path, "w", encoding="utf-8") as f:
-                json.dump(schema_content, f, ensure_ascii=False, indent=4)
+            logger.error("配置文件不存在,请重新下载插件...")
 
     def _handle_driver_manager(self) -> None:
         self.driver = None
@@ -166,12 +154,16 @@ class FzInfoPlugin(Star):
         os.makedirs(output_dir, exist_ok=True)
         output_path = os.path.join(output_dir, f"{character}.png")
         if os.path.exists(output_path):
-            if time.time() - os.path.getmtime(output_path) < 3600:  # 1小时缓存
+            if (
+                time.time() - os.path.getmtime(output_path) < self.keep_temp_time
+            ):  # 1小时缓存
                 yield event.image_result(output_path)
                 return
             else:
                 os.remove(output_path)  # 缓存过期，删除旧的截图
-        url = await self.get_url(game=game, character=character)
+        url = await self.get_url(game=game, character=character, event=event)
+        if url == "no_need_to_return_url":  # 无需返回url，停止
+            return
         if not url:
             yield event.plain_result("url获取失败")
             return
@@ -229,7 +221,7 @@ class FzInfoPlugin(Star):
         ):
             yield ret
 
-    async def get_url(self, game: str, character: str):
+    async def get_url(self, game: str, character: str, event: AstrMessageEvent):
         if game in self.gamelist:
             if game == "zzz" or game == "ww":
                 try:
@@ -248,10 +240,135 @@ class FzInfoPlugin(Star):
                 except Exception as e:
                     logger.error(f"获取url失败: {str(e)}")
                     return False
+            elif game == "issac":
+                base_url = self.gamelist[game]["url"]
+                driver = self.driver
+                query_url = f"{base_url}/{character}"
+                driver.get(query_url)
+                if "这是一个消歧义页" in driver.page_source:  # 检查是否是消歧义页面
+                    logger.info(f"检测到以撒消歧义页面: {query_url}")
+                    await self._handle_disambiguation_page(
+                        original_query=character, query_url=query_url, event=event
+                    )
+                    return "no_need_to_return_url"
+                else:
+                    return query_url
             else:
                 url = f"{self.gamelist[game]['url']}/{character}"
             return url
         else:
+            return None
+
+    async def _handle_disambiguation_page(
+        self,
+        event: AstrMessageEvent,
+        query_url: str,
+        original_query: str,
+    ):
+        """
+        处理以撒wiki的消歧义页面，识别所有选项并根据用户消息进行选择和跳转。
+        """
+        try:
+            disambiguation_links = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_all_elements_located(
+                    (
+                        By.XPATH,
+                        "//div[@class='mw-parser-output']/ul/li/span[@class='item']/a | //div[@class='mw-parser-output']/ul/li/span[@style='display:inline-block;']/a",
+                    )
+                )
+            )
+            options = []
+            for link_element in disambiguation_links:
+                title = link_element.get_attribute("title")
+                href = link_element.get_attribute("href")
+                if title and href:
+                    options.append({"title": title, "url": href})
+
+            if not options:
+                logger.warning("未能在消歧义页面找到有效选项。")
+                yield event.plain_result("未能在消歧义页面找到有效选项。杂鱼程序员")
+                return None
+
+            logger.info(f"{options}")
+            output_path = os.path.join(
+                self.gamelist["issac"]["output_dir"],
+                f"{original_query}消歧义页.png",
+            )
+            if (
+                not os.path.exists(output_path)
+                and time.time() - os.path.getmtime(output_path) > self.keep_temp_time
+            ):  # 1小时缓存
+                await self.take_full_screenshot(query_url, output_path, "issac")
+
+            msg_components = [
+                (Comp.Plain(text="请输入你要查看的选项序号数字\n")),
+                Comp.Image.fromFileSystem(output_path),
+            ]
+            await event.send(event.chain_result(msg_components))
+
+            @session_waiter(timeout=60, record_history_chains=False)
+            async def empty_mention_waiter(
+                controller: SessionController, event: AstrMessageEvent
+            ):
+                try:
+                    choice = event.message_str
+                    if choice == "取消":
+                        logger.info("用户取消选择")
+                        await event.send(event.plain_result("已退出wiki查询~"))
+                        controller.stop()
+                        return
+                    choice_index = int(choice) - 1  # 将用户输入转换为索引
+                    if 0 <= choice_index < len(options):
+                        logger.info(f"选择选项: {options[choice_index]['title']}")
+                        await event.send(
+                            event.plain_result(
+                                f"你选择了{choice_index + 1}: {options[choice_index]['title']}，请稍后..."
+                            )
+                        )
+                        matched_url = options[choice_index]["url"]
+                        output_path = os.path.join(
+                            self.gamelist["issac"]["output_dir"],
+                            f"{original_query}_{choice_index + 1}.png",
+                        )
+                        if (
+                            not os.path.exists(output_path)
+                            or time.time() - os.path.getmtime(output_path)
+                            > self.keep_temp_time
+                        ):
+                            await self.take_full_screenshot(
+                                matched_url, output_path, "issac"
+                            )
+                        await event.send(event.image_result(output_path))
+                        controller.stop()
+                        return
+                    else:
+                        logger.info(f"选项超出范围: {event.message_str}")
+                        await event.send(
+                            event.plain_result(
+                                f"选项超出范围。请输入1到{len(options)}之间的数字。"
+                            )
+                        )
+                        return
+                except ValueError:  # 处理非数字输入
+                    logger.warning(f"用户输入非数字: {event.message_str}")
+                    await event.send(
+                        event.plain_result(
+                            "无效输入。请输入一个阿拉伯数字作为选项序号。"
+                        )
+                    )
+                    return
+
+            try:
+                await empty_mention_waiter(event)
+            except TimeoutError:
+                logger.warning("用户操作超时。")
+                await event.send(event.plain_result("已退出wiki查询，操作超时"))
+            except Exception as e:
+                logger.error(f"处理用户选择时出错: {str(e)}", exc_info=True)
+            finally:
+                event.stop_event()
+        except Exception as e:
+            logger.error(f"处理以撒消歧义页面失败: {str(e)}", exc_info=True)
             return None
 
     async def take_full_screenshot(
@@ -280,7 +397,7 @@ class FzInfoPlugin(Star):
                 driver.execute_script(
                     f"window.scrollTo(0, document.body.scrollHeight / {scroll_segments} * ({i + 1}));"
                 )
-                time.sleep(scroll_pause_time)
+                await asyncio.sleep(scroll_pause_time)
                 new_height = driver.execute_script("return document.body.scrollHeight")
                 if new_height > initial_height:
                     initial_height = new_height
@@ -288,16 +405,29 @@ class FzInfoPlugin(Star):
                     driver.execute_script(
                         "window.scrollTo(0, document.body.scrollHeight);"
                     )
-                    time.sleep(scroll_pause_time)  # 确保最终完全滚动到底部并等待
+                    await asyncio.sleep(
+                        scroll_pause_time
+                    )  # 确保最终完全滚动到底部并等待
             if game == "issac":
-                element = WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.ID, "mw-normal-catlinks"))
-                )
-                driver.execute_script("window.scrollTo(0, 0);")
-                last_height = element.location["y"]
+                if "分类:消歧义页" in driver.page_source:
+                    element = WebDriverWait(driver, 10).until(
+                        EC.presence_of_element_located(
+                            (
+                                By.XPATH,
+                                "//a[@title='分类:消歧义页' and text()='消歧义页']",
+                            )
+                        )
+                    )
+                    last_height = element.location["y"] + 300
+                else:
+                    element = WebDriverWait(driver, 10).until(
+                        EC.presence_of_element_located((By.ID, "mw-normal-catlinks"))
+                    )
+                    last_height = element.location["y"]
+
             elif game == "sr" or game == "ys":
                 driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(scroll_pause_time)  # 等待页面加载完成
+                await asyncio.sleep(scroll_pause_time)  # 等待页面加载完成
                 element = (
                     driver.find_elements(By.CSS_SELECTOR, "div.a_section.c_0.c_3")[-1]
                     if game == "sr"
@@ -310,7 +440,7 @@ class FzInfoPlugin(Star):
                 )  # 适配sr/ys页面
             elif game == "zzz" or game == "ww":
                 driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(scroll_pause_time)  # 等待页面加载完成
+                await asyncio.sleep(scroll_pause_time)  # 等待页面加载完成
                 element = driver.find_elements(
                     By.CSS_SELECTOR,
                     "div.flex.flex-col.justify-center.text-sm.font-light.text-gray-400.border-opacity-20",
@@ -320,7 +450,7 @@ class FzInfoPlugin(Star):
                 )  # 适配zzz/ww页面
             elif game == "fz":
                 driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(scroll_pause_time)  # 等待页面加载完成
+                await asyncio.sleep(scroll_pause_time)  # 等待页面加载完成
                 element = driver.find_elements(By.ID, "footer-poweredbyico")[-1]
                 last_height = (
                     element.location["y"] + element.size["height"]
@@ -329,6 +459,7 @@ class FzInfoPlugin(Star):
                 last_height = driver.execute_script("return document.body.scrollHeight")
             logger.info(f"页面最终总高度: {last_height}px")
             driver.set_window_size(1920, last_height)
+            driver.execute_script("window.scrollTo(0, 0);")
             driver.save_screenshot(output_path)
             logger.info(f"截图成功保存到: {output_path}")
             return True

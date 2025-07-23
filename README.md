@@ -1,6 +1,6 @@
 # 部分二游角色 wiki 插件 astrbot_plugin_gameinfo
 
-## v1.1.7
+## v1.1.8
 
 ## 这是一个获取部分二游角色 wiki 的 AstrBot 插件。
 
@@ -33,11 +33,18 @@
 
 - `browser_type`: 截图使用的浏览器类型（默认：chrome）
 
+- `keep_temp_time`: 保留已保存的截图的时长，单位为分钟
+
 ## 已知问题和 todolist
 
 - ~~崩铁和原神 Wiki 页面尾部可能有过多空余。~~
 
 ## 重要更新日志:
+
+### v1.1.8
+
+- 增加了`keep_temp_time`配置项，用于设置保存截图的时长，单位为分钟。
+- 对以撒 wiki 的消歧义页进行适配。
 
 ### v1.1.7
 
