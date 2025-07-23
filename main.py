@@ -286,7 +286,9 @@ class FzInfoPlugin(Star):
 
             if not options:
                 logger.warning("未能在消歧义页面找到有效选项。")
-                yield event.plain_result("未能在消歧义页面找到有效选项。杂鱼程序员")
+                event.send(
+                    event.plain_result("未能在消歧义页面找到有效选项。杂鱼程序员")
+                )
                 return None
 
             logger.info(f"{options}")
