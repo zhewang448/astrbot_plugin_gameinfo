@@ -298,7 +298,7 @@ class FzInfoPlugin(Star):
             )
             if (
                 not os.path.exists(output_path)
-                and time.time() - os.path.getmtime(output_path) > self.keep_temp_time
+                or time.time() - os.path.getmtime(output_path) > self.keep_temp_time
             ):  # 1小时缓存
                 await self.take_full_screenshot(query_url, output_path, "issac")
 
