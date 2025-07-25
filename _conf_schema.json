@@ -3,7 +3,8 @@
       "description": "用于网页截图的浏览器类型 (chrome 或 edge 或 firefox)", 
       "type": "string",
       "hint": "chrome/edge/firefox", 
-      "default": "chrome"
+      "default": "chrome",
+      "options": ["chrome", "edge", "firefox"]
   },
     "driver_path": {
         "description": "浏览器驱动路径",
