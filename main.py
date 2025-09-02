@@ -24,7 +24,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 
 @register(
-    "astrbot_plugin_gameinfo", "bushikq", "一个获取部分二游角色wiki信息的插件", "1.1.8"
+    "astrbot_plugin_gameinfo", "bushikq", "一个获取部分二游角色wiki信息的插件", "1.1.9"
 )
 class FzInfoPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -96,7 +96,12 @@ class FzInfoPlugin(Star):
             options.add_argument("log-level=3")
             options.add_argument("disable-infobars")
             options.add_argument("--disable-logging")
-            options.add_experimental_option("excludeSwitches", ["enable-logging"])
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+
+            # 只有 Chromium 家族才有 experimental option，做个防守式判断
+            if hasattr(options, "add_experimental_option"):
+                options.add_experimental_option("excludeSwitches", ["enable-logging"])
 
         try:
             if self.browser_type == "edge":  # 添加 Edge 支持
@@ -222,6 +227,12 @@ class FzInfoPlugin(Star):
             yield ret
 
     async def get_url(self, game: str, character: str, event: AstrMessageEvent):
+        if not self.driver:
+            logger.error("浏览器驱动未初始化")
+            self._handle_driver_manager()
+        if not self.driver:
+            logger.error("浏览器驱动初始化失败")
+            return None
         if game in self.gamelist:
             if game == "zzz" or game == "ww":
                 try:

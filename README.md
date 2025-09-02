@@ -1,6 +1,6 @@
 # 部分二游角色 wiki 插件 astrbot_plugin_gameinfo
 
-## v1.1.8
+## v1.1.9
 
 ## 这是一个获取部分二游角色 wiki 的 AstrBot 插件。
 
