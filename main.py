@@ -24,7 +24,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 
 @register(
-    "astrbot_plugin_gameinfo", "bushikq", "一个获取部分二游角色wiki信息的插件", "1.2.0"
+    "astrbot_plugin_gameinfo", "bushikq", "一个获取部分二游角色wiki信息的插件", "1.2.2"
 )
 class FzInfoPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -48,11 +48,11 @@ class FzInfoPlugin(Star):
                 "output_dir": os.path.join(self.assets_dir, "fzassets"),
             },
             "ys": {
-                "url": "https://homdgcat.wiki/gi",
+                "url": "https://gi20.hakush.in/character",
                 "output_dir": os.path.join(self.assets_dir, "ysassets"),
             },
             "sr": {
-                "url": "https://homdgcat.wiki/sr",
+                "url": "https://hsr20.hakush.in/char",
                 "output_dir": os.path.join(self.assets_dir, "srassets"),
             },
             "zzz": {
@@ -234,12 +234,15 @@ class FzInfoPlugin(Star):
             logger.error("浏览器驱动初始化失败")
             return None
         if game in self.gamelist:
-            if game == "zzz" or game == "ww":
+            if game in ["ys", "sr", "zzz", "ww"]:
                 try:
                     logger.info(f"开始尝试获取url: {character}")
                     driver = self.driver
                     driver.get(self.gamelist[game]["url"])
-                    character_link_xpath = f"//a[contains(@href, '/character/') and .//div[contains(text(), '{character.split('/')[0]}')]]"
+                    if game in ["sr"]:
+                        character_link_xpath = f"//a[contains(@href, '/char/') and .//div[contains(text(), '{character.split('/')[0]}')]]"
+                    else:
+                        character_link_xpath = f"//a[contains(@href, '/character/') and .//div[contains(text(), '{character.split('/')[0]}')]]"
                     # 等待角色链接加载并可点击
                     character_link = WebDriverWait(driver, 10).until(
                         EC.element_to_be_clickable((By.XPATH, character_link_xpath))
@@ -437,21 +440,21 @@ class FzInfoPlugin(Star):
                         EC.presence_of_element_located((By.ID, "mw-normal-catlinks"))
                     )
                     last_height = element.location["y"]
-
-            elif game == "sr" or game == "ys":
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                await asyncio.sleep(scroll_pause_time)  # 等待页面加载完成
-                element = (
-                    driver.find_elements(By.CSS_SELECTOR, "div.a_section.c_0.c_3")[-1]
-                    if game == "sr"
-                    else driver.find_elements(
-                        By.CSS_SELECTOR, "div.a_section.shows.shows_3"
-                    )[-1]
-                )
-                last_height = (
-                    element.location["y"] + element.size["height"] + 500
-                )  # 适配sr/ys页面
-            elif game == "zzz" or game == "ww":
+            #保留逻辑，以备不时之需
+            # elif game == "sr" or game == "ys":
+            #     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            #     await asyncio.sleep(scroll_pause_time)  # 等待页面加载完成
+            #     element = (
+            #         driver.find_elements(By.CSS_SELECTOR, "div.a_section.c_0.c_3")[-1]
+            #         if game == "sr"
+            #         else driver.find_elements(
+            #             By.CSS_SELECTOR, "div.a_section.shows.shows_3"
+            #         )[-1]
+            #     )
+            #     last_height = (
+            #         element.location["y"] + element.size["height"] + 500
+            #     )  # 适配sr/ys页面
+            elif game in ["zzz", "ww", "sr", "ys"]:
                 driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                 await asyncio.sleep(scroll_pause_time)  # 等待页面加载完成
                 element = driver.find_elements(
@@ -483,7 +486,7 @@ class FzInfoPlugin(Star):
     @filter.command("getscreenshot")
     async def getscreenshot_handler(self, event: AstrMessageEvent, url: str):
         """输入 getscreenshot [URL] 获取网页截图"""
-        output_path = os.path.join(self.assets_dir, "temp_screenshot.png")
+        output_path = os.path.join(self.assets_dir, "temp_screenshot.png")s
         success = await self.take_full_screenshot(url=url, output_path=output_path)
         if success:
             yield event.image_result(output_path)
