@@ -440,7 +440,7 @@ class FzInfoPlugin(Star):
                         EC.presence_of_element_located((By.ID, "mw-normal-catlinks"))
                     )
                     last_height = element.location["y"]
-            #保留逻辑，以备不时之需
+            # 保留逻辑，以备不时之需
             # elif game == "sr" or game == "ys":
             #     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
             #     await asyncio.sleep(scroll_pause_time)  # 等待页面加载完成
@@ -486,7 +486,7 @@ class FzInfoPlugin(Star):
     @filter.command("getscreenshot")
     async def getscreenshot_handler(self, event: AstrMessageEvent, url: str):
         """输入 getscreenshot [URL] 获取网页截图"""
-        output_path = os.path.join(self.assets_dir, "temp_screenshot.png")s
+        output_path = os.path.join(self.assets_dir, "temp_screenshot.png")
         success = await self.take_full_screenshot(url=url, output_path=output_path)
         if success:
             yield event.image_result(output_path)
