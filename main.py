@@ -1,12 +1,14 @@
 import time
 import os
 import asyncio
+import json
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.core.utils.session_waiter import session_waiter, SessionController
 import astrbot.api.message_components as Comp
 from astrbot.api.star import Context, Star, register, StarTools
 from astrbot.core.config.astrbot_config import AstrBotConfig
 from astrbot.api import logger
+from thefuzz import fuzz, process
 from selenium import webdriver
 from selenium.webdriver.chrome.options import (
     Options as ChromeOptions,
@@ -24,7 +26,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 
 @register(
-    "astrbot_plugin_gameinfo", "bushikq", "一个获取部分二游角色wiki信息的插件", "1.2.2"
+    "astrbot_plugin_gameinfo", "bushikq", "一个获取部分二游角色wiki信息的插件", "1.2.3"
 )
 class FzInfoPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -44,28 +46,51 @@ class FzInfoPlugin(Star):
         logger.info("二游wiki插件初始化中...")  # 使用框架自带logger
         self.gamelist = {
             "fz": {
+                "name": "明日方舟",
                 "url": "https://prts.wiki/w",
                 "output_dir": os.path.join(self.assets_dir, "fzassets"),
+                "url_type": "append",  # url + "/" + character
             },
             "ys": {
+                "name": "原神",
                 "url": "https://gi20.hakush.in/character",
                 "output_dir": os.path.join(self.assets_dir, "ysassets"),
+                "url_type": "search",  # 需要在列表页搜索
+                "xpath_template": "//a[contains(@href, '/character/') and .//div[contains(text(), '{}')]]",
             },
             "sr": {
+                "name": "崩坏：星穹铁道",
                 "url": "https://hsr20.hakush.in/char",
                 "output_dir": os.path.join(self.assets_dir, "srassets"),
+                "url_type": "search",
+                "xpath_template": "//a[contains(@href, '/char/') and .//div[contains(text(), '{}')]]",
             },
             "zzz": {
+                "name": "绝区零",
                 "url": "https://zzz3.hakush.in/character",
                 "output_dir": os.path.join(self.assets_dir, "zzzassets"),
+                "url_type": "search",
+                "xpath_template": "//a[contains(@href, '/character/') and .//div[contains(text(), '{}')]]",
             },
             "ww": {
+                "name": "鸣潮",
                 "url": "https://ww2.hakush.in/character",
                 "output_dir": os.path.join(self.assets_dir, "wwassets"),
+                "url_type": "search",
+                "xpath_template": "//a[contains(@href, '/character/') and .//div[contains(text(), '{}')]]",
             },
             "issac": {
+                "name": "以撒的结合：重生",
                 "url": "https://isaac.huijiwiki.com/wiki",
                 "output_dir": os.path.join(self.assets_dir, "issacassets"),
+                "url_type": "append",  # url + "/" + character
+            },
+            "endfield": {
+                "name": "终末地",
+                "url": "https://warfarin.wiki/cn/operators",
+                "output_dir": os.path.join(self.assets_dir, "endfieldassets"),
+                "url_type": "search",
+                "xpath_template": "//a[contains(@href, '/cn/operators/') and .//span[contains(text(), '{}')]]",
             },
         }
         self._handle_config_schema()  # 调用处理配置文件方法
@@ -153,11 +178,28 @@ class FzInfoPlugin(Star):
             yield event.plain_result("角色名不能为空")
             return
         if game not in self.gamelist:
-            yield event.plain_result("未知游戏")
-        yield event.plain_result(f"正在查询{game}中的{character}信息，请稍后...")
+            yield event.plain_result("还不支持该游戏喵")
+        yield event.plain_result(
+            f"正在查询 {self.gamelist[game]['name']} 中的 {character} 词条，请稍后..."
+        )
         output_dir = self.gamelist[game]["output_dir"]
         os.makedirs(output_dir, exist_ok=True)
-        output_path = os.path.join(output_dir, f"{character}.png")
+        # 获取URL和实际匹配的角色名（用于正确的缓存路径）
+        url_result = await self.get_url(game=game, character=character, event=event)
+        if url_result == "no_need_to_return_url":  # 无需返回url，停止
+            return
+        if not url_result:
+            yield event.plain_result("url获取失败")
+            return
+        url, matched_character = url_result
+        output_path = os.path.join(output_dir, f"{matched_character}.png")
+
+        # 如果发生了模糊匹配，提示用户
+        if matched_character != character:
+            yield event.plain_result(
+                f"未找到 '{character}'，已自动匹配为 '{matched_character}'"
+            )
+
         if os.path.exists(output_path):
             if (
                 time.time() - os.path.getmtime(output_path) < self.keep_temp_time
@@ -166,12 +208,6 @@ class FzInfoPlugin(Star):
                 return
             else:
                 os.remove(output_path)  # 缓存过期，删除旧的截图
-        url = await self.get_url(game=game, character=character, event=event)
-        if url == "no_need_to_return_url":  # 无需返回url，停止
-            return
-        if not url:
-            yield event.plain_result("url获取失败")
-            return
         try:
             await self.take_full_screenshot(url, output_path, game, 3)
             yield event.image_result(output_path)
@@ -226,52 +262,174 @@ class FzInfoPlugin(Star):
         ):
             yield ret
 
+    @filter.command("endfieldinfo", alias={"终末地wiki查询"})
+    async def endfield_handler(self, event: AstrMessageEvent, character: str = None):
+        """输入 endfieldinfo [角色名]    返回角色信息截图"""
+        async for ret in self.game_info_handler(
+            event=event, game="endfield", character=character
+        ):
+            yield ret
+
     async def get_url(self, game: str, character: str, event: AstrMessageEvent):
+        """
+        获取角色详情页URL
+
+        Returns:
+            tuple: (url, matched_character) 或 None
+        """
         if not self.driver:
             logger.error("浏览器驱动未初始化")
             self._handle_driver_manager()
         if not self.driver:
             logger.error("浏览器驱动初始化失败")
             return None
-        if game in self.gamelist:
-            if game in ["ys", "sr", "zzz", "ww"]:
-                try:
-                    logger.info(f"开始尝试获取url: {character}")
-                    driver = self.driver
-                    driver.get(self.gamelist[game]["url"])
-                    if game in ["sr"]:
-                        character_link_xpath = f"//a[contains(@href, '/char/') and .//div[contains(text(), '{character.split('/')[0]}')]]"
-                    else:
-                        character_link_xpath = f"//a[contains(@href, '/character/') and .//div[contains(text(), '{character.split('/')[0]}')]]"
-                    # 等待角色链接加载并可点击
-                    character_link = WebDriverWait(driver, 10).until(
-                        EC.element_to_be_clickable((By.XPATH, character_link_xpath))
+        if game not in self.gamelist:
+            return None
+
+        game_config = self.gamelist[game]
+        url_type = game_config.get("url_type", "append")
+
+        # 需要在列表页搜索的游戏
+        if url_type == "search":
+            try:
+                logger.info(f"开始尝试获取url: {character}")
+                driver = self.driver
+                driver.get(game_config["url"])
+
+                # 从配置中获取 XPath 模板并填充角色名
+                xpath_template = game_config.get("xpath_template", "")
+                character_link_xpath = xpath_template.format(character.split("/")[0])
+
+                # 等待角色链接加载并可点击
+                character_link = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, character_link_xpath))
+                )
+                url = character_link.get_attribute("href")
+                logger.info(f"获取到url: {url}")
+                return (url, character)  # 返回URL和实际匹配的角色名
+            except Exception as e:
+                logger.error(f"精确匹配失败: {str(e)}，尝试模糊匹配")
+                # 模糊匹配：自动选择相似度最高的角色
+                best_match = await self._fuzzy_match(game, character)
+                if best_match:
+                    logger.info(
+                        f"模糊匹配成功: {character} -> {best_match[0]} (相似度: {best_match[1]}%)"
                     )
-                    # 点击角色链接
-                    url = character_link.get_attribute("href")
-                    logger.info(f"获取到url: {url}")
-                    return url
-                except Exception as e:
-                    logger.error(f"获取url失败: {str(e)}")
-                    return False
-            elif game == "issac":
-                base_url = self.gamelist[game]["url"]
+                    # 使用最佳匹配重新获取URL
+                    result = await self.get_url(game, best_match[0], event)
+                    if result:
+                        url, _ = result
+                        return (url, best_match[0])  # 返回URL和模糊匹配的角色名
+                return False
+
+        # 直接拼接 URL 的游戏
+        elif url_type == "append":
+            if game == "issac":
+                base_url = game_config["url"]
                 driver = self.driver
                 query_url = f"{base_url}/{character}"
                 driver.get(query_url)
-                if "这是一个消歧义页" in driver.page_source:  # 检查是否是消歧义页面
+                if "这是一个消歧义页" in driver.page_source:
                     logger.info(f"检测到以撒消歧义页面: {query_url}")
                     await self._handle_disambiguation_page(
                         original_query=character, query_url=query_url, event=event
                     )
-                    return "no_need_to_return_url"
+                    return ("no_need_to_return_url", character)
                 else:
-                    return query_url
+                    return (query_url, character)
             else:
-                url = f"{self.gamelist[game]['url']}/{character}"
-            return url
-        else:
+                return (f"{game_config['url']}/{character}", character)
+
+        return None
+
+    async def _fuzzy_match(self, game: str, character: str) -> tuple[str, int] | None:
+        """
+        模糊匹配角色名，自动选择相似度最高的结果
+
+        Args:
+            game: 游戏标识
+            character: 用户输入的角色名
+
+        Returns:
+            (最佳匹配角色名, 相似度) 或 None
+        """
+        try:
+            role_list = await self._get_role_list(game)
+            if not role_list:
+                return None
+
+            # 使用 thefuzz 进行模糊匹配，获取最佳结果
+            result = process.extractOne(character, role_list, scorer=fuzz.ratio)
+            if result and result[1] >= 60:  # 相似度 >= 60% 才接受
+                return result
             return None
+        except Exception as e:
+            logger.error(f"模糊匹配失败: {str(e)}")
+            return None
+
+    async def _get_role_list(self, game: str) -> list[str]:
+        """获取游戏角色列表（从缓存或网页抓取）"""
+        cache_file = self.data_dir / f"{game}_roles.json"
+
+        # 尝试从缓存读取
+        if cache_file.exists():
+            try:
+                with open(cache_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.warning(f"读取角色列表缓存失败: {e}")
+
+        # 从网页抓取角色列表
+        if not self.driver:
+            self._handle_driver_manager()
+        if not self.driver:
+            return []
+
+        try:
+            driver = self.driver
+            driver.get(self.gamelist[game]["url"])
+            await asyncio.sleep(2)  # 等待页面加载
+
+            # 根据游戏类型提取角色名
+            role_list = []
+            if game in ["ys", "sr", "zzz", "ww"]:
+                # 从 div 元素中提取角色名
+                elements = driver.find_elements(
+                    By.XPATH,
+                    "//a[contains(@href, '/character/') or contains(@href, '/char/')]//div[contains(@class, 'name') or contains(@class, 'text')]",
+                )
+                for elem in elements:
+                    text = elem.text.strip()
+                    if text and len(text) < 20:  # 过滤掉非角色名的长文本
+                        role_list.append(text)
+            elif game == "endfield":
+                # 从 span 元素中提取角色名
+                elements = driver.find_elements(
+                    By.XPATH, "//a[contains(@href, '/cn/operators/')]//span"
+                )
+                for elem in elements:
+                    text = elem.text.strip()
+                    if text and len(text) < 20 and text not in role_list:
+                        role_list.append(text)
+
+            # 去重
+            role_list = list(dict.fromkeys(role_list))
+
+            # 保存到缓存
+            if role_list:
+                try:
+                    with open(cache_file, "w", encoding="utf-8") as f:
+                        json.dump(role_list, f, ensure_ascii=False, indent=2)
+                    logger.info(
+                        f"已更新 {game} 角色列表缓存，共 {len(role_list)} 个角色"
+                    )
+                except Exception as e:
+                    logger.warning(f"保存角色列表缓存失败: {e}")
+
+            return role_list
+        except Exception as e:
+            logger.error(f"抓取角色列表失败: {str(e)}")
+            return []
 
     async def _handle_disambiguation_page(
         self,
@@ -471,7 +629,8 @@ class FzInfoPlugin(Star):
                 last_height = (
                     element.location["y"] + element.size["height"]
                 )  # 适配fz页面
-            else:
+
+            else:  # 终末地和其他默认逻辑
                 last_height = driver.execute_script("return document.body.scrollHeight")
             logger.info(f"页面最终总高度: {last_height}px")
             driver.set_window_size(1920, last_height)
