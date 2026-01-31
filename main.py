@@ -95,6 +95,7 @@ class FzInfoPlugin(Star):
         }
         self._handle_config_schema()  # 调用处理配置文件方法
         self._handle_driver_manager()  # 调用浏览器驱动管理方法
+        self.query_lock = asyncio.Lock()  # 查询锁，防止并发访问浏览器导致页面覆盖
 
     def _handle_config_schema(self) -> None:
         """处理配置文件,确保它在正确的位置"""
@@ -182,37 +183,40 @@ class FzInfoPlugin(Star):
         yield event.plain_result(
             f"正在查询 {self.gamelist[game]['name']} 中的 {character} 词条，请稍后..."
         )
-        output_dir = self.gamelist[game]["output_dir"]
-        os.makedirs(output_dir, exist_ok=True)
-        # 获取URL和实际匹配的角色名（用于正确的缓存路径）
-        url_result = await self.get_url(game=game, character=character, event=event)
-        if url_result == "no_need_to_return_url":  # 无需返回url，停止
-            return
-        if not url_result:
-            yield event.plain_result("url获取失败")
-            return
-        url, matched_character = url_result
-        output_path = os.path.join(output_dir, f"{matched_character}.png")
 
-        # 如果发生了模糊匹配，提示用户
-        if matched_character != character:
-            yield event.plain_result(
-                f"未找到 '{character}'，已自动匹配为 '{matched_character}'"
-            )
-
-        if os.path.exists(output_path):
-            if (
-                time.time() - os.path.getmtime(output_path) < self.keep_temp_time
-            ):  # 1小时缓存
-                yield event.image_result(output_path)
+        # 使用锁确保同一时间只有一个查询在执行，防止页面覆盖
+        async with self.query_lock:
+            output_dir = self.gamelist[game]["output_dir"]
+            os.makedirs(output_dir, exist_ok=True)
+            # 获取URL和实际匹配的角色名（用于正确的缓存路径）
+            url_result = await self.get_url(game=game, character=character, event=event)
+            if url_result == "no_need_to_return_url":  # 无需返回url，停止
                 return
-            else:
-                os.remove(output_path)  # 缓存过期，删除旧的截图
-        try:
-            await self.take_full_screenshot(url, output_path, game, 3)
-            yield event.image_result(output_path)
-        except Exception as e:
-            logger.error(f"截图失败: {str(e)}")
+            if not url_result:
+                yield event.plain_result("url获取失败")
+                return
+            url, matched_character = url_result
+            output_path = os.path.join(output_dir, f"{matched_character}.png")
+
+            # 如果发生了模糊匹配，提示用户
+            if matched_character != character:
+                yield event.plain_result(
+                    f"未找到 '{character}'，已自动匹配为 '{matched_character}'"
+                )
+
+            if os.path.exists(output_path):
+                if (
+                    time.time() - os.path.getmtime(output_path) < self.keep_temp_time
+                ):  # 1小时缓存
+                    yield event.image_result(output_path)
+                    return
+                else:
+                    os.remove(output_path)  # 缓存过期，删除旧的截图
+            try:
+                await self.take_full_screenshot(url, output_path, game, 3)
+                yield event.image_result(output_path)
+            except Exception as e:
+                logger.error(f"截图失败: {str(e)}")
 
     @filter.command("srinfo", alias={"崩铁wiki查询", "星穹铁道wiki查询"})
     async def sr_handler(self, event: AstrMessageEvent, character: str = None):
