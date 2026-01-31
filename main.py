@@ -372,18 +372,7 @@ class FzInfoPlugin(Star):
             return None
 
     async def _get_role_list(self, game: str) -> list[str]:
-        """获取游戏角色列表（从缓存或网页抓取）"""
-        cache_file = self.data_dir / f"{game}_roles.json"
-
-        # 尝试从缓存读取
-        if cache_file.exists():
-            try:
-                with open(cache_file, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception as e:
-                logger.warning(f"读取角色列表缓存失败: {e}")
-
-        # 从网页抓取角色列表
+        """获取游戏角色列表（每次从网页抓取最新数据）"""
         if not self.driver:
             self._handle_driver_manager()
         if not self.driver:
@@ -418,17 +407,7 @@ class FzInfoPlugin(Star):
 
             # 去重
             role_list = list(dict.fromkeys(role_list))
-
-            # 保存到缓存
-            if role_list:
-                try:
-                    with open(cache_file, "w", encoding="utf-8") as f:
-                        json.dump(role_list, f, ensure_ascii=False, indent=2)
-                    logger.info(
-                        f"已更新 {game} 角色列表缓存，共 {len(role_list)} 个角色"
-                    )
-                except Exception as e:
-                    logger.warning(f"保存角色列表缓存失败: {e}")
+            logger.info(f"已获取 {game} 角色列表，共 {len(role_list)} 个角色")
 
             return role_list
         except Exception as e:
