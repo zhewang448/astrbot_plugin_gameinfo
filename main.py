@@ -26,7 +26,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 
 @register(
-    "astrbot_plugin_gameinfo", "bushikq", "一个获取部分二游角色wiki信息的插件", "1.2.3"
+    "astrbot_plugin_gameinfo", "bushikq", "一个获取部分二游角色wiki信息的插件", "1.2.4"
 )
 class FzInfoPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
